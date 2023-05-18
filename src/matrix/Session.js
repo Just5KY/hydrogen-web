@@ -78,6 +78,9 @@ export class Session {
         this._roomsBeingCreated = new ObservableMap();
         this._user = new User(sessionInfo.userId);
         this._roomStateHandler = new RoomStateHandlerSet();
+        if (features.calls) {
+            this._setupCallHandler();
+        }
         this._deviceMessageHandler = new DeviceMessageHandler({storage, callHandler: this._callHandler});
         this._olm = olm;
         this._olmUtil = null;
@@ -106,10 +109,6 @@ export class Session {
         this._createRoomEncryption = this._createRoomEncryption.bind(this);
         this._forgetArchivedRoom = this._forgetArchivedRoom.bind(this);
         this.needsKeyBackup = new ObservableValue(false);
-
-        if (features.calls) {
-            this._setupCallHandler();
-        }
     }
 
     get fingerprintKey() {
@@ -796,7 +795,7 @@ export class Session {
         // to-device messages, to help us avoid throwing away one-time-keys that we
         // are about to receive messages for
         // (https://github.com/vector-im/riot-web/issues/2782).
-        if (!isCatchupSync) {
+        if (this._e2eeAccount && !isCatchupSync) {
             const needsToUploadOTKs = await this._e2eeAccount.generateOTKsIfNeeded(this._storage, log);
             if (needsToUploadOTKs) {
                 await log.wrap("uploadKeys", log => this._e2eeAccount.uploadKeys(this._storage, false, log));

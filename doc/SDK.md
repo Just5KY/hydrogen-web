@@ -3,6 +3,9 @@
 
 The Hydrogen view SDK allows developers to integrate parts of the Hydrogen application into the UI of their own application. Hydrogen is written with the MVVM pattern, so to construct a view, you'd first construct a view model, which you then pass into the view. For most view models, you will first need a running client.
 
+## Changelog
+[See CHANGELOG.md](./CHANGELOG.md)  
+
 ## Example
 
 The Hydrogen SDK requires some assets to be shipped along with your app for things like downloading attachments, and end-to-end encryption. A convenient way to make this happen is provided by the SDK (importing `hydrogen-view-sdk/paths/vite`) but depends on your build system. Currently, only [vite](https://vitejs.dev/) is supported, so that's what we'll be using in the example below.
@@ -15,6 +18,7 @@ yarn create vite
 cd <your-project-name>
 yarn
 yarn add hydrogen-view-sdk
+yarn add https://gitlab.matrix.org/api/v4/projects/27/packages/npm/@matrix-org/olm/-/@matrix-org/olm-3.2.14.tgz
 ```
 
 You should see a `index.html` in the project root directory, containing an element with `id="app"`. Add the attribute `class="hydrogen"` to this element, as the CSS we'll include from the SDK assumes for now that the app is rendered in an element with this classname.
@@ -32,7 +36,8 @@ import {
     createRouter,
     RoomViewModel,
     TimelineView,
-    viewClassForTile
+    viewClassForTile,
+    FeatureSet
 } from "hydrogen-view-sdk";
 import downloadSandboxPath from 'hydrogen-view-sdk/download-sandbox.html?url';
 import workerPath from 'hydrogen-view-sdk/main.js?url';
@@ -81,12 +86,14 @@ async function main() {
         const {session} = client;
         // looks for room corresponding to #element-dev:matrix.org, assuming it is already joined
         const room = session.rooms.get("!bEWtlqtDwCLFIAKAcv:matrix.org");
+        const features = await FeatureSet.load(platform.settingsStorage);
         const vm = new RoomViewModel({
             room,
             ownUserId: session.userId,
             platform,
             urlRouter: urlRouter,
             navigation,
+            features,
         });
         await vm.load();
         const view = new TimelineView(vm.timelineViewModel, viewClassForTile);
