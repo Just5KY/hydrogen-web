@@ -984,9 +984,16 @@ button.link {
     margin: 0;
 }
 
-.UnknownRoomView {
+.UnknownRoomView_container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+}
+
+.UnknownRoomView_body {
+    height: 100%;
     text-align: center;
     padding: 16px;
     box-sizing: border-box;
@@ -1012,6 +1019,54 @@ button.link {
 }
 
 /* Right Panel */
+
+.InvitePanelView {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.InvitePanelView__form {
+    margin-top: 8px;
+}
+
+.InvitePanelView__input {
+    font-family: "Inter";
+    font-size: 1.3rem;
+    font-weight: 500;
+    line-height: 1.573rem;
+    outline: none;
+    border: none;
+    background-color: var(--icon-background);
+    color: var(--text-color);
+    height: 32px;
+    box-sizing: border-box;
+    margin: 5px;
+    border-radius: 16px;
+    padding: 15px;
+    width: 90%;
+}
+
+.InvitePanelView__form,
+.InvitePanelView__btn {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.InvitePanelView__btn {
+    width: 100px;
+    height: 30px;
+    margin-top: 8px;
+}
+
+.InvitePanelView__heading {
+    width: 90%;
+    text-align: center;
+    margin: 0;
+}
 
 .RightPanelView {
     background: var(--background-color-secondary);
@@ -1123,10 +1178,30 @@ button.RoomDetailsView_row::after {
 
 /* Memberlist Panel */
 
-.MemberListView {
+.MemberListView__list {
     padding-left: 16px;
     padding-right: 16px;
     margin: 0;
+}
+
+.MemberListView {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.MemberListView__invite-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.MemberListView__invite-btn {
+    width: 80%;
+    height: 32px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .MemberTileView {
@@ -1206,7 +1281,7 @@ button.RoomDetailsView_row::after {
     gap: 12px;
 }
 
-.CreateRoomView, .JoinRoomView, .RoomBeingCreated_error {
+.CreateRoomView_body, .JoinRoomView_body, .RoomBeingCreated_error {
     max-width: 400px;
 }
 
@@ -1399,6 +1474,10 @@ button.RoomDetailsView_row::after {
     justify-content: center;
 }
 
+.VerifyEmojisView {
+    width: 100%;
+}
+
 .VerificationCompleteView,
 .DeviceVerificationView,
 .SelectMethodView {
@@ -1406,11 +1485,20 @@ button.RoomDetailsView_row::after {
     align-items: center;
     justify-content: center;
     flex-direction: column;
+    width: 100%;
+}
+
+.SelectMethodView > div,
+.SelectMethodView__heading,
+.SelectMethodView__title {
+    width: inherit;
+    box-sizing: border-box;
 }
 
 .VerificationCompleteView__heading,
 .VerifyEmojisView__heading,
 .SelectMethodView__heading,
+.MissingKeysView__heading,
 .WaitingForOtherUserView__heading {
     display: flex;
     align-items: center;
@@ -1420,6 +1508,10 @@ button.RoomDetailsView_row::after {
     padding: 8px;
 }
 
+.MissingKeysView__heading {
+    text-align: center;
+}
+
 .VerificationCompleteView>*,
 .SelectMethodView>*,
 .VerifyEmojisView>*,
@@ -1427,11 +1519,21 @@ button.RoomDetailsView_row::after {
     padding: 16px;
 }
 
+.VerificationCancelledView__title,
+.VerificationCompleteView__title,
+.VerifyEmojisView__title,
+.SelectMethodView__title,
+.WaitingForOtherUserView__title {
+    font-size: 1.5em;
+    text-align: center;
+}
+
 .VerificationCompleteView__title,
 .VerifyEmojisView__title,
 .SelectMethodView__title,
 .WaitingForOtherUserView__title,
 .VerificationCancelledView__description,
+.MissingKeysView__description,
 .VerificationCompleteView__description,
 .VerifyEmojisView__description,
 .SelectMethodView__description,
@@ -1441,6 +1543,7 @@ button.RoomDetailsView_row::after {
 }
 
 .VerificationCancelledView__actions,
+.MissingKeysView__actions,
 .SelectMethodView__actions,
 .VerifyEmojisView__actions,
 .WaitingForOtherUserView__actions {
@@ -1454,6 +1557,7 @@ button.RoomDetailsView_row::after {
     display: flex;
     justify-content: center;
     gap: 16px;
+    flex-wrap: wrap;
 }
 
 .EmojiContainer__emoji {
@@ -1481,4 +1585,68 @@ button.RoomDetailsView_row::after {
     background-size: contain;
     width: 128px;
     height: 128px;
+}
+
+.SelectMethodView__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+    display: inline-block;
+}
+
+.VerificationInProgressTileView,
+.VerificationCompletedTileView,
+.VerificationCancelledTileView,
+.VerificationReadyTileView {
+    display: flex;
+    gap: 20px;
+}
+
+.VerificationTileView__actions {
+    display: flex;
+    gap: 16px;
+}
+
+.VerificationTileView__description {
+    display: flex;
+    align-items: center;
+    font-weight: bold;
+    font-size: 1.4rem;
+    color: var(--text-color);
+    gap: 4px;
+    text-align: center;
+}
+
+.VerificationInProgressTileView,
+.VerificationCompletedTileView,
+.VerificationCancelledTileView,
+.VerificationReadyTileView {
+    background: var(--background-color-primary--darker-5);
+    padding: 8px;
+    box-sizing: border-box;
+    border-radius: 8px;
+}
+
+.VerificationTileView {
+    display: flex;
+    justify-content: center;
+    padding: 5px 10%;
+    box-sizing: border-box;
+}
+
+
+.VerificationInProgressTileView .VerificationTileView__shield,
+.VerificationReadyTileView .VerificationTileView__shield {
+    background: url("./icons/e2ee-normal.svg?primary=background-color-secondary--darker-40") no-repeat;
+}
+
+.VerificationCompletedTileView .VerificationTileView__shield {
+    background: url("./icons/e2ee-normal.svg?primary=accent-color") no-repeat;
+}
+
+.VerificationTileView__shield {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-self: center;
 }

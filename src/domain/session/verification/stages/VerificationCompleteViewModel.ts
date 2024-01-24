@@ -14,26 +14,36 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-import {SegmentType} from "../../../navigation/index";
-import {ErrorReportViewModel} from "../../../ErrorReportViewModel";
+import {DismissibleVerificationViewModel} from "./DismissibleVerificationViewModel";
 import type {Options as BaseOptions} from "../../../ViewModel";
 import type {Session} from "../../../../matrix/Session.js";
+import type {SASVerification} from "../../../../matrix/verification/SAS/SASVerification";
 
 type Options = BaseOptions & {
     deviceId: string;
     session: Session;
+    sas: SASVerification;
 };
 
-export class VerificationCompleteViewModel extends ErrorReportViewModel<SegmentType, Options> {
+export class VerificationCompleteViewModel extends DismissibleVerificationViewModel<Options> {
     get otherDeviceId(): string {
         return this.options.deviceId;
     }
 
-    gotoSettings() {
-        this.navigation.push("settings", true);
+    get otherUsername(): string {
+        return this.getOption("sas").otherUserId;
     }
 
     get kind(): string {
         return "verification-completed";
+    }
+
+    get verificationSuccessfulMessage(): string {
+        if (this.getOption("sas").isCrossSigningAnotherUser) {
+            return this.i18n`You successfully verified user ${this.otherUsername}`;
+        }
+        else {
+            return this.i18n`You successfully verified device ${this.otherDeviceId}`;
+        }
     }
 }

@@ -33,6 +33,7 @@ export class RoomViewModel extends ErrorReportViewModel {
     constructor(options) {
         super(options);
         const {room, tileClassForEntry} = options;
+        this._sendReadReceipt = options.sendReadReceipt ?? true;
         this._room = room;
         this._timelineVM = null;
         this._tileClassForEntry = tileClassForEntry ?? defaultTileClassForEntry;
@@ -77,9 +78,10 @@ export class RoomViewModel extends ErrorReportViewModel {
     }
 
     async load() {
-        this.logAndCatch("RoomViewModel.load", async log => {
+        await this.logAndCatch("RoomViewModel.load", async log => {
             this._room.on("change", this._onRoomChange);
             const timeline = await this._room.openTimeline(log);
+            this.track(() => timeline.release());
             this._tileOptions = this.childOptions({
                 session: this.getOption("session"),
                 roomVM: this,
@@ -126,7 +128,7 @@ export class RoomViewModel extends ErrorReportViewModel {
         this._clearUnreadTimout = this.clock.createTimeout(2000);
         try {
             await this._clearUnreadTimout.elapsed();
-            await this._room.clearUnread(log);
+            await this._room.clearUnread(log, this._sendReadReceipt);
             this._clearUnreadTimout = null;
         } catch (err) {
             if (err.name === "AbortError") {
@@ -270,6 +272,14 @@ export class RoomViewModel extends ErrorReportViewModel {
                     await this._processCommandJoin(roomName);
                 } else {
                     this.reportError(new Error("join syntax: /join <room-id>"));
+                }
+                break;
+            case "invite":
+                if (args.length === 1) {
+                    const userId = args[0];
+                    await this._room.inviteUser(userId);
+                } else {
+                    this.reportError(new Error("invite syntax: /invite <user-id>"));
                 }
                 break;
             case "shrug":

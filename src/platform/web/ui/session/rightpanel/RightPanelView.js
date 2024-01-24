@@ -19,6 +19,8 @@ import {RoomDetailsView} from "./RoomDetailsView.js";
 import {MemberListView} from "./MemberListView.js";
 import {LoadingView} from "../../general/LoadingView.js";
 import {MemberDetailsView} from "./MemberDetailsView.js";
+import {DeviceVerificationView} from "../verification/DeviceVerificationView";
+import {InvitePanelView} from "./InvitePanelView";
 
 export class RightPanelView extends TemplateView {
     render(t) {
@@ -39,6 +41,10 @@ export class RightPanelView extends TemplateView {
                 return new MemberListView(vm);
             case "member-details":
                 return new MemberDetailsView(vm);
+            case "invite":
+                return new InvitePanelView(vm);
+            case "verification":
+                return new DeviceVerificationView(vm);
             default:
                 return new LoadingView();
         }
@@ -53,7 +59,7 @@ class ButtonsView extends TemplateView {
                 className: {
                     "back": true,
                     "button-utility": true,
-                    "hide": !vm.activeViewModel.shouldShowBackButton
+                    "hide": (vm) => !vm.activeViewModel.shouldShowBackButton
                 }, onClick: () => vm.showPreviousPanel()}),
             t.button({className: "close button-utility", onClick: () => vm.closePanel()})
         ]);

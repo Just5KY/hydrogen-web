@@ -18,11 +18,12 @@ import {verifyEd25519Signature, SignatureVerification} from "../e2ee/common";
 import {BaseObservableValue, RetainedObservableValue} from "../../observable/value";
 import {pkSign} from "./common";
 import {SASVerification} from "./SAS/SASVerification";
-import {ToDeviceChannel} from "./SAS/channel/Channel";
+import {ToDeviceChannel} from "./SAS/channel/ToDeviceChannel";
+import {RoomChannel} from "./SAS/channel/RoomChannel";
 import {VerificationEventType} from "./SAS/channel/types";
 import {ObservableMap} from "../../observable/map";
 import {SASRequest} from "./SAS/SASRequest";
-import type {SecretStorage} from "../ssss/SecretStorage";
+import {SecretFetcher} from "../ssss";
 import type {Storage} from "../storage/idb/Storage";
 import type {Platform} from "../../platform/web/Platform";
 import type {DeviceTracker} from "../e2ee/DeviceTracker";
@@ -31,6 +32,8 @@ import type {Account} from "../e2ee/Account";
 import type {ILogItem} from "../../logging/types";
 import type {DeviceMessageHandler} from "../DeviceMessageHandler.js";
 import type {SignedValue, DeviceKey} from "../e2ee/common";
+import type {Room} from "../room/Room.js";
+import type {IChannel} from "./SAS/channel/IChannel";
 import type * as OlmNamespace from "@matrix-org/olm";
 
 type Olm = typeof OlmNamespace;
@@ -78,9 +81,15 @@ enum MSKVerification {
     Valid
 }
 
+export interface IVerificationMethod {
+    verify(): Promise<boolean>;
+    otherDeviceId: string;
+    otherUserId: string;
+}
+
 export class CrossSigning {
     private readonly storage: Storage;
-    private readonly secretStorage: SecretStorage;
+    private readonly secretFetcher: SecretFetcher;
     private readonly platform: Platform;
     private readonly deviceTracker: DeviceTracker;
     private readonly olm: Olm;
@@ -97,7 +106,7 @@ export class CrossSigning {
 
     constructor(options: {
         storage: Storage,
-        secretStorage: SecretStorage,
+        secretFetcher: SecretFetcher,
         deviceTracker: DeviceTracker,
         platform: Platform,
         olm: Olm,
@@ -109,7 +118,7 @@ export class CrossSigning {
         deviceMessageHandler: DeviceMessageHandler,
     }) {
         this.storage = options.storage;
-        this.secretStorage = options.secretStorage;
+        this.secretFetcher = options.secretFetcher;
         this.platform = options.platform;
         this.deviceTracker = options.deviceTracker;
         this.olm = options.olm;
@@ -172,23 +181,39 @@ export class CrossSigning {
         return this._isMasterKeyTrusted;
     }
 
-    startVerification(requestOrUserId: SASRequest, log: ILogItem): SASVerification | undefined;
-    startVerification(requestOrUserId: string, log: ILogItem): SASVerification | undefined;
-    startVerification(requestOrUserId: string | SASRequest, log: ILogItem): SASVerification | undefined {
+    startVerification(requestOrUserId: SASRequest, logOrRoom: ILogItem): SASVerification | undefined;
+    startVerification(requestOrUserId: string, logOrRoom: ILogItem): SASVerification | undefined;
+    startVerification(requestOrUserId: SASRequest, logOrRoom: Room, _log: ILogItem): SASVerification | undefined;
+    startVerification(requestOrUserId: string, logOrRoom: Room, _log: ILogItem): SASVerification | undefined;
+    startVerification(requestOrUserId: string | SASRequest, logOrRoom: Room | ILogItem, _log?: ILogItem): SASVerification | undefined {
+        const log: ILogItem = _log ?? logOrRoom;
         if (this.sasVerificationInProgress && !this.sasVerificationInProgress.finished) {
+            log.log({ sasVerificationAlreadyInProgress: true });
             return;
         }
         const otherUserId = requestOrUserId instanceof SASRequest ? requestOrUserId.sender : requestOrUserId;
         const startingMessage = requestOrUserId instanceof SASRequest ? requestOrUserId.startingMessage : undefined;
-        const channel = new ToDeviceChannel({
-            deviceTracker: this.deviceTracker,
-            hsApi: this.hsApi,
-            otherUserId,
-            clock: this.platform.clock,
-            deviceMessageHandler: this.deviceMessageHandler,
-            ourUserDeviceId: this.deviceId,
-            log
-        }, startingMessage);
+        let channel: IChannel;
+        if (otherUserId === this.ownUserId) {
+            channel = new ToDeviceChannel({
+                deviceTracker: this.deviceTracker,
+                hsApi: this.hsApi,
+                otherUserId,
+                clock: this.platform.clock,
+                deviceMessageHandler: this.deviceMessageHandler,
+                ourUserDeviceId: this.deviceId,
+                log
+            }, startingMessage);
+        }
+        else {
+            channel = new RoomChannel({
+                room: logOrRoom,
+                otherUserId,
+                ourUserId: this.ownUserId,
+                ourUserDeviceId: this.deviceId,
+                log,
+            }, startingMessage);
+        }
 
         this.sasVerificationInProgress = new SASVerification({
             olm: this.olm,
@@ -202,38 +227,64 @@ export class CrossSigning {
             deviceTracker: this.deviceTracker,
             hsApi: this.hsApi,
             clock: this.platform.clock,
-            crossSigning: this,
         });
         return this.sasVerificationInProgress;
     }
 
-    private handleSASDeviceMessage({ unencrypted: event }) {
-        const txnId = event.content.transaction_id;
-        /**
-         * If we receive an event for the current/previously finished 
-         * SAS verification, we should ignore it because the device channel
-         * object (who also listens for to_device messages) will take care of it (if needed).
-         */
-        const shouldIgnoreEvent = this.sasVerificationInProgress?.channel.id === txnId;
-        if (shouldIgnoreEvent) { return; }
-        /**
-         * 1. If we receive the cancel message, we need to update the requests map.
-         * 2. If we receive an starting message (viz request/start), we need to create the SASRequest from it.
-         */
-        switch (event.type) {
-            case VerificationEventType.Cancel: 
-                this.receivedSASVerifications.remove(txnId);
-                return;
-            case VerificationEventType.Request:
-            case VerificationEventType.Start:
-                this.platform.logger.run("Create SASRequest", () => {
-                    this.receivedSASVerifications.set(txnId, new SASRequest(event));
-                });
-                return;
-            default:
-                // we don't care about this event!
-                return;
+    private async handleSASDeviceMessage({ unencrypted: event }) {
+        if (!event ||
+            (event.type !== VerificationEventType.Request && event.type !== VerificationEventType.Start)
+        ) {
+            return;
         }
+        await this.platform.logger.run("CrossSigning.handleSASDeviceMessage", async log => {
+            const txnId = event.content.transaction_id;
+            const fromDevice = event.content.from_device;
+            const fromUser = event.sender;
+            if (!fromDevice || fromUser !== this.ownUserId) {
+                /**
+                 * SAS verification may be started with a request or a start message but
+                 * both should contain a from_device.
+                 */
+                return;
+            }
+            if (!await this.areWeVerified(log)) {
+                /**
+                 * If we're not verified, then the other device MUST be verified.
+                 * We check this so that verification between two unverified devices
+                 * never happen!
+                 */
+                const device = await this.deviceTracker.deviceForId(this.ownUserId, fromDevice, this.hsApi, log);
+                if (!device || !await this.isOurUserDeviceTrusted(device!, log)) {
+                    return;
+                }
+            }
+            /**
+             * If we receive an event for the current/previously finished 
+             * SAS verification, we should ignore it because the device channel
+             * object (who also listens for to_device messages) will take care of it (if needed).
+             */
+            const shouldIgnoreEvent = this.sasVerificationInProgress?.channel.id === txnId;
+            if (shouldIgnoreEvent) { return; }
+            /**
+             * 1. If we receive the cancel message, we need to update the requests map.
+             * 2. If we receive an starting message (viz request/start), we need to create the SASRequest from it.
+             */
+            switch (event.type) {
+                case VerificationEventType.Cancel: 
+                    this.receivedSASVerifications.remove(txnId);
+                    return;
+                case VerificationEventType.Request:
+                case VerificationEventType.Start:
+                    this.platform.logger.run("Create SASRequest", () => {
+                        this.receivedSASVerifications.set(txnId, new SASRequest(event));
+                    });
+                    return;
+                default:
+                    // we don't care about this event!
+                    return;
+            }
+        });
     }
 
     /** returns our own device key signed by our self-signing key. Other signatures will be missing. */
@@ -249,13 +300,26 @@ export class CrossSigning {
     }
 
     /** @return the signed device key for the given device id */
-    async signDevice(deviceId: string, log: ILogItem): Promise<DeviceKey | undefined> {
+    async signDevice(verification: IVerificationMethod, log: ILogItem): Promise<DeviceKey | undefined> {
         return log.wrap("CrossSigning.signDevice", async log => {
-            log.set("id", deviceId);
             if (!this._isMasterKeyTrusted) {
+                /**
+                 * If we're the unverified device that is participating in
+                 * the verification process, it is expected that we do not
+                 * have access to the private part of MSK and thus
+                 * cannot determine if the MSK is trusted. In this case, we
+                 * do not need to sign anything because the other (verified)
+                 * device will sign our device key with the SSK.
+                 */
                 log.set("mskNotTrusted", true);
-                return;
             }
+            const shouldSign = await verification.verify() && this._isMasterKeyTrusted;
+            log.set("shouldSign", shouldSign);
+            if (!shouldSign) {
+                return; 
+            }
+            const deviceId = verification.otherDeviceId;
+            log.set("id", deviceId);
             const keyToSign = await this.deviceTracker.deviceForId(this.ownUserId, deviceId, this.hsApi, log);
             if (!keyToSign) {
                 return undefined;
@@ -266,8 +330,9 @@ export class CrossSigning {
     }
 
     /** @return the signed MSK for the given user id */
-    async signUser(userId: string, log: ILogItem): Promise<CrossSigningKey | undefined> {
+    async signUser(verification: IVerificationMethod, log: ILogItem): Promise<CrossSigningKey | undefined> {
         return log.wrap("CrossSigning.signUser", async log => {
+            const userId = verification.otherUserId;
             log.set("id", userId);
             if (!this._isMasterKeyTrusted) {
                 log.set("mskNotTrusted", true);
@@ -276,6 +341,11 @@ export class CrossSigning {
             // can't sign own user
             if (userId === this.ownUserId) {
                 return;
+            }
+            const shouldSign = await verification.verify();
+            log.set("shouldSign", shouldSign);
+            if (!shouldSign) {
+                return; 
             }
             const keyToSign = await this.deviceTracker.getCrossSigningKeyForUser(userId, KeyUsage.Master, this.hsApi, log);
             if (!keyToSign) {
@@ -302,6 +372,27 @@ export class CrossSigning {
             this.emitUserTrustUpdate(userId, log);
             return keyToSign;
         });
+    }
+
+    async isOurUserDeviceTrusted(device: DeviceKey, log?: ILogItem): Promise<boolean> {
+        return await this.platform.logger.wrapOrRun(log, "CrossSigning.isOurUserDeviceTrusted", async (_log) => {
+            const ourSSK = await this.deviceTracker.getCrossSigningKeyForUser(this.ownUserId, KeyUsage.SelfSigning, this.hsApi, _log);
+            if (!ourSSK) {
+                return false;
+            }
+            const verification = this.hasValidSignatureFrom(device, ourSSK, _log);
+            if (verification === SignatureVerification.Valid) {
+                return true;
+            }
+            return false;
+        });
+    }
+
+    areWeVerified(log?: ILogItem): Promise<boolean> {
+        return this.platform.logger.wrapOrRun(log, "CrossSigning.areWeVerified", async (_log) => {
+            const device = await this.deviceTracker.deviceForId(this.ownUserId, this.deviceId, this.hsApi, _log);
+            return this.isOurUserDeviceTrusted(device!, log);
+       }); 
     }
 
     getUserTrust(userId: string, log: ILogItem): Promise<UserTrust> {
@@ -421,7 +512,7 @@ export class CrossSigning {
     }
 
     private async getSigningKey(usage: KeyUsage): Promise<Uint8Array | undefined> {
-        const seedStr = await this.secretStorage.readSecret(`m.cross_signing.${usage}`);
+        const seedStr = await this.secretFetcher.getSecret(`m.cross_signing.${usage}`);
         if (seedStr) {
             return new Uint8Array(this.platform.encoding.base64.decode(seedStr));
         }
